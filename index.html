@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+
+<html>
+	<head>
+        <link rel="stylesheet" href="css/style.css"/>
+		<title>Quality Check</title>
+	</head>
+
+	<body>
+        <div id="header">
+            <div id="line"></div>
+            <h2 id="title">Quality Check</h2>
+        </div>
+
+        <div id="content">
+    		<form enctype="multipart/form-data" id="mainForm" name="mainForm" method="post" action="../cgi-bin/quality_check.py">
+                <p class="formitem">This tool is meant to find any problems in unaligned nucleotide sequences.</p>
+        		<p class="formitem">To use this tool, please insert text or upload a file with unaligned sequence data in the <b>fasta</b> format.<br>You can configure which tests are run on the datasets using the checkboxes in the <em>Quality Check Procedures</em> section.<br>An email will be sent to the given address with results as an excel document.</p>
+				<f>(Note: DNA sequences will be converted to uppercase.)</f>
+				<br>
+
+				<input class="formitem" name="file" type="file" style="width: 18em;">  <!-- This is the element that may upload the file -->
+
+    			<textarea id="fastaInputArea" name="fastaInputArea" wrap="off" placeholder="Enter DNA sequences here.  Please use fasta format."></textarea>
+                
+				<div class="formitem">
+    			    <label for="emailAddress">Email address : </label>
+    			    <input type="text" name="emailAddress" id="emailAddress" placeholder="person@email.com" style="width: 12em;"> 
+					<f>(Leave this blank if you only want quick results.)</f>
+    			</div>
+
+				<h3 class="formitem">Quality Check Procedures:</h3>
+
+				<!-- All of the checkboxes go here -->
+				<div id="procedureBox" class="formitem">
+					<h4 class="formitem">This analysis should look for:</h4>
+					<div class="formitem">
+						<label for="div3">Sequence length divisible by 3 : </label>
+    			    	<input class="customCheckbox" type="checkbox" name="div3" value="div3" checked="checked">
+						<br>
+
+						<label for="div3">Starts with M : </label>
+						<input class="customCheckbox" type="checkbox" name="start" value="start" checked="checked">
+						<br>
+
+						<label for="div3">Stops with * : </label>
+						<input class="customCheckbox" type="checkbox" name="stop" value="stop" checked="checked">
+						<br>
+
+						<label for="div3">Internal * : </label>
+						<input class="customCheckbox" type="checkbox" name="internal" value="internal" checked="checked">
+					 	<f>(Translated from the first reading frame.)</f>
+						<br>
+
+						<label for="div3">Mixture Characters : </label>
+						<input class="customCheckbox" type="checkbox" name="mixture" value="mixture" checked="checked">
+    				</div>
+				</div>
+
+                <div class="formitem">
+    			    <input id="formSubmit" type="submit" name="submitBtn" value="Calculate">
+    			</div>
+
+    		</form>
+        </div>
+	</body>
+</html>
+
