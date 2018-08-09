@@ -1,85 +1,29 @@
 #!/opt/local/Library/Frameworks/Python.framework/Versions/2.7/bin/python
 
-# Start html output.
-print ("Content-type: text/html")
-print 
-print ( "<html><head>" )
-print ( "<title>Results</title>" ) 
-print ( "</head><body>" )
-
 import sys  # Add the path to openpyxl (excel files). (And other web dependencies.)
-sys.path.append("/Users/B_Team_iMac/Sites/cgi-bin/python_dependencies/")
-
 import re
+import cgi
+import smtplib
+from email.mime.text import MIMEText
 
+sys.path.append("/Users/B_Team_iMac/Sites/cgi-bin/python_dependencies/libraries/")
+from openpyxl import Workbook
+import openpyxl
+from openpyxl.styles import colors
+from openpyxl.styles import Font, Color
+
+sys.path.append("/Users/B_Team_iMac/Sites/cgi-bin/python_dependencies/util_scripts/")
 import sequence_utils
 import format_utils
 import mailer
-import cgi
+import web_output
 
 
-##### Function implementations.
+##### Create and instance of the site class for website creation.	
 
 
-# This function checks the validity of the sequence and returns the boolean value 'is_valid'.
-def _validity_test(in_sequence):
-	report = sequence_utils.invalid_in_sequence(in_sequence)  # Searches for invalid characters in sequence.
-	return report[0]  # Return the report's validity.
+website = web_output.Site("Results")
 
-# This function runs the divisible by 3 test on the sequence and returns success as a bool in a tuple.
-def _div3_test(in_sequence):
-	return (True,) if len(in_sequence) % 3 == 0 else (False,)
-
-# This function runs the "check for start codon" test on the sequence and returns success as a bool in a tuple.
-def _start_test(in_sequence):
-	first_char = sequence_utils.translate_nuc(in_sequence, 0)[0]
-	return (True,) if first_char == 'M' else (False,)
-
-# This function runs the "check for end codon" test on the sequence and returns success as a bool in a tuple.
-def _stop_test(in_sequence):
-	last_char = sequence_utils.translate_nuc(in_sequence, 0)[-1]
-	return (True,) if last_char == '*' else (False,)
-
-# This function runs the "check for internal end codons" test on the sequence and returns 
-# (True,) if there are no internal and (False, position, ...) if there are internal end codons.  
-def _internal_test(in_sequence):
-	nuc_seq = sequence_utils.translate_nuc(in_sequence, 0)  # Convert the dna seq to nuc. 
-
-	no_internal = True  # No internal end codons.
-	position_list = ()  # This holds the positions of any internal end codons.	
-
-	# Find all instances of '*' in the nuc_seq and collect all that are not at the end.
-	for match in re.finditer('\\x2a', nuc_seq):
-		if match.start() != len(nuc_seq)-1:
-			no_internal = False
-			position_list += (match.start(),)  #TODO: is this the correct position?
-
-	return (no_internal,) + position_list
-
-# This function runs the "check for mixtures" test on the sequence and returns (False,) if there are
-# no mixtures, and (True, mixture_percent_comp, dict_of_the_variety_of_mixtures)  { [2] == a dict of all the different mixtures that are in the sequence }
-def _mixture_test(in_sequence):
-	report = sequence_utils.mixtures_in_sequence(in_sequence)  # Searches for mixture characters in the sequence.
-
-	# Case: There are no mixtures. 
-	if report[0] == False:  
-		return (True, 0)
-	
-	mixture_dict = {}
-	mixture_counter = 0	
-
-	# Init the dictionary with 0s for each mixture.
-	for mixture_item in sequence_utils.mixture_list: 
-		mixture_dict[mixture_item] = 0
-
-	# Count the occurance of each mixture and total mixture count.
-	for mixture_item in report[1:]:
-		mixture_dict[mixture_item[0]] += 1
-		mixture_counter += 1
-	
-	percent_comp = int( float(mixture_counter) / float(len(in_sequence)) * (100**2) ) / 100.0
-	return (False, percent_comp, mixture_dict)
-			
 
 ##### Get website input.
 
@@ -116,6 +60,7 @@ for tuple in fasta_list:
 	fasta_list[index] = (tuple[0], tuple[1].upper())
 	index += 1
 
+
 ##### Run tests on the given sequences and save the results in matrix. 
 
 
@@ -133,7 +78,7 @@ for tuple in fasta_list:
 	# Get a report that contains validity and bad characters.
 	report = sequence_utils.invalid_in_sequence(dna_sequence)
 	output_dict['isvalid'] = report[0]
-	
+
 	# If sequence in invalid give the user some info.
 	if output_dict['isvalid'] == False:
 		msg_first = "Found invalid characters in the sequence <em>{}</em>.  These characters may affect certain calculations.".format( tuple[0] )
@@ -148,26 +93,26 @@ for tuple in fasta_list:
 
 		msg_third = "The following invalid characters were found: {}".format( invalid_char_string )
 
-		print (msg_first + '<br>' + msg_second + '<br>' + msg_third + '<br><br>' )
+		website.send (msg_first + '<br>' + msg_second + '<br>' + msg_third + '<br><br>' )
 
 	##### Run the div3 test.
 	if flag_list[0] == 1:
-		output_dict["div3"] = _div3_test(dna_sequence)
+		output_dict["div3"] = sequence_utils.seq_div3_test(dna_sequence)
 	
 	##### Run the start test.
 	if flag_list[1] == 1 and output_dict['isvalid'] == True:
-		output_dict["start"] = _start_test(dna_sequence)
+		output_dict["start"] = sequence_utils.seq_start_test(dna_sequence)
 	
 	##### Run the stop test.
 	if flag_list[2] == 1 and output_dict['isvalid'] == True:
-		output_dict["stop"] = _stop_test(dna_sequence)
+		output_dict["stop"] = sequence_utils.seq_stop_test(dna_sequence)
 	
 	##### Run the internal test.
 	if flag_list[3] == 1 and output_dict['isvalid'] == True:
-		output_dict["internal"] = _internal_test(dna_sequence)
+		output_dict["internal"] = sequence_utils.seq_internal_test(dna_sequence)
 	
 	##### Run the mixture test.
-	mixture_results = _mixture_test(dna_sequence)
+	mixture_results = sequence_utils.seq_mixture_test(dna_sequence)
 
 	# Save the mixture percent composition even when checkbox is unchecked.
 	output_dict["mixture_percent"] = mixture_results[1]	
@@ -183,10 +128,10 @@ for tuple in fasta_list:
 
 
 # Print the quick results title.
-print ( "--"*35 )
-print ( '<h4 style="margin: 0;">Quick Results:</h4>' )
-print ( "--"*35 )
-print ( "<br><br>" )
+website.send ( '<br><h4 style="margin: 0;">Quick Results:</h4><br>' )
+website.new_box()
+website.send ( '<br>' )
+
 
 # This function returns a string with the quick results for each parameter. 
 def _quick_results_string(param_key, param_msg, matrix):
@@ -202,29 +147,23 @@ def _quick_results_string(param_key, param_msg, matrix):
 	
 # Output results for each section.
 if flag_list[0] == 1:	
-	print ( _quick_results_string('div3', "have lengths that are not divisible by 3", results_matrix) )
+	website.send ( _quick_results_string('div3', "have lengths that are not divisible by 3", results_matrix) )
 
 if flag_list[1] == 1:
-	print ( _quick_results_string('start', "have an improper start codon", results_matrix) )
+	website.send ( _quick_results_string('start', "have an improper start codon", results_matrix) )
 
 if flag_list[2] == 1:
-	print ( _quick_results_string('stop', "have an improper end condon", results_matrix) )
+	website.send ( _quick_results_string('stop', "have an improper end codon", results_matrix) )
 
 if flag_list[3] == 1:
-	print ( _quick_results_string('internal', "have internal end codons", results_matrix) )
+	website.send ( _quick_results_string('internal', "have internal end codons", results_matrix) )
 	
 if flag_list[4] == 1:
-	print ( _quick_results_string('mixture', "contain mixtures", results_matrix) )
+	website.send ( _quick_results_string('mixture', "contain mixtures", results_matrix) )
 
 
 ##### Create an xlsx file.
 
-
-from openpyxl import Workbook
-import openpyxl
-
-from openpyxl.styles import colors
-from openpyxl.styles import Font, Color
 
 XLSX_FILENAME = "quality_check_data"
 
@@ -268,19 +207,15 @@ xlsx_file = mailer.create_file( XLSX_FILENAME, 'xlsx', file_text )
 ##### Send an email with the xlsx file in it.
 
 
-# Draw a line above the message.
-print ( "--"*35 )
-print ( "<br><br>" )
-
-import smtplib
-from email.mime.text import MIMEText
+website.new_box()
+website.send ( '<br>' )
 
 # Determine if an email should be sent.
-if email_address_string == "":
-	print ( "Email address not given; no email has been sent.<br>" )	
+if flag_list[0] + flag_list[1] + flag_list[2] + flag_list[3] + flag_list[4] == 0:
+	website.send ( "All procedures are disabled.  Enable at least one procedure for an email to be sent." )
 
-elif flag_list[0] + flag_list[1] + flag_list[2] + flag_list[3] + flag_list[4] == 0:
-	print ( "All procedures are disabled.  Enable at least one procedure for an email to be sent." )
+elif email_address_string == '':
+	website.send ( "Email address not given; no email has been sent.<br>" )
 
 else:
 	# Add the body to the message and send it.
@@ -288,10 +223,13 @@ else:
 	msg_body = "The included .xlsx file ({}.xlsx) contains the requested quality check data. \n\n{}".format(XLSX_FILENAME, end_message)
 
 	if mailer.send_sfu_email("quality_check", email_address_string, "Quality Check Results", msg_body, [xlsx_file]) == 0:
-		print ( "An email has been sent to <b>{}</b> with a full table of results. <br>Make sure <b>{}</b> is spelled correctly.".format(email_address_string, email_address_string) )
+		website.send ( "An email has been sent to <b>{}</b> with a full table of results. <br>Make sure <b>{}</b> is spelled correctly.<br>".format(email_address_string, email_address_string) )
 
 	# Check if email is formatted correctly.
 	if not re.match(r"[^@]+@[^@]+\.[^@]+", email_address_string):
-		print "<br><br> Your email address (<b>{}</b>) is likely spelled incorrectly, please re-check its spelling.".format(email_address_string)
+		website.send( "Your email address (<b>{}</b>) is likely spelled incorrectly, please re-check its spelling.<br>".format(email_address_string) )
 
-print ( "</body></html>" )  # Complete the html output.
+website.send ( '<br>' )
+	
+website.set_footer( "python version: " + sys.version)  # Print version number.
+website.generate_site()  # Actually finish running the site.
