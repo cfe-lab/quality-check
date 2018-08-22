@@ -1,4 +1,6 @@
-#!/opt/local/Library/Frameworks/Python.framework/Versions/2.7/bin/python
+#!/Library/Frameworks/Python.framework/Versions/3.6/bin/python3
+
+import os
 
 import sys  # Add the path to openpyxl (excel files). (And other web dependencies.)
 import re
@@ -6,13 +8,15 @@ import cgi
 import smtplib
 from email.mime.text import MIMEText
 
-sys.path.append("/Users/B_Team_iMac/Sites/cgi-bin/python_dependencies/libraries/")
+#sys.path.append("/Users/B_Team_iMac/Sites/cgi-bin/python_dependencies/libraries/")
+sys.path.append( "{}/../python_dependencies/libraries/".format(os.getcwd()) )
 from openpyxl import Workbook
 import openpyxl
 from openpyxl.styles import colors
 from openpyxl.styles import Font, Color
 
-sys.path.append("/Users/B_Team_iMac/Sites/cgi-bin/python_dependencies/util_scripts/")
+#sys.path.append("/Users/B_Team_iMac/Sites/cgi-bin/python_dependencies/3.6/util_scripts/")
+sys.path.append( "{}/../python_dependencies/3.6/util_scripts/".format(os.getcwd()) )
 import sequence_utils
 import format_utils
 import mailer
@@ -22,7 +26,7 @@ import web_output
 ##### Create and instance of the site class for website creation.	
 
 
-website = web_output.Site("Results")
+website = web_output.Site("Results", False)
 
 
 ##### Get website input.
@@ -35,7 +39,7 @@ file_item = form['file']  # Get the file item
 # Check if the file was submitted to the form.
 if file_item.filename:
 	# Read the file's text.
-	input_field_text = [e+'\n' for e in str( file_item.value ).replace('\r', '\n').split('\n') if e]
+	input_field_text = [e+'\n' for e in str( file_item.value.decode("utf-8") ).replace('\r', '\n').split('\n') if e]
 
 else:
 	# Get user input string and convert it into a list of lines.
@@ -50,6 +54,8 @@ flag_list.append( 0 if form.getvalue("start") == None else 1 )
 flag_list.append( 0 if form.getvalue("stop") == None else 1 )
 flag_list.append( 0 if form.getvalue("internal") == None else 1 )
 flag_list.append( 0 if form.getvalue("mixture") == None else 1 )
+
+#website.send( input_field_text )
 
 # Convert file to a list of tuples.
 fasta_list = sequence_utils.convert_fasta( input_field_text )
