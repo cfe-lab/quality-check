@@ -1,49 +1,51 @@
-#!/Library/Frameworks/Python.framework/Versions/3.6/bin/python3
+#!/lib/anaconda3/bin/python3.7
 
-import os
+import sys, re, cgi
 
-import sys  # Add the path to openpyxl (excel files). (And other web dependencies.)
-import re
-import cgi
-import smtplib
-from email.mime.text import MIMEText
+CGI_BIN_PATH = "/var/www/cgi-bin"
 
-#sys.path.append("/Users/B_Team_iMac/Sites/cgi-bin/python_dependencies/libraries/")
-sys.path.append( "{}/../python_dependencies/libraries/".format(os.getcwd()) )
+sys.path.append( "{}/depend/libraries/".format(CGI_BIN_PATH) )
 from openpyxl import Workbook
 import openpyxl
 from openpyxl.styles import colors
 from openpyxl.styles import Font, Color
 
-#sys.path.append("/Users/B_Team_iMac/Sites/cgi-bin/python_dependencies/3.6/util_scripts/")
-sys.path.append( "{}/../python_dependencies/3.6/util_scripts/".format(os.getcwd()) )
+sys.path.append( "{}/depend/util_scripts/".format(CGI_BIN_PATH) )
 import sequence_utils
 import format_utils
 import mailer
 import web_output
 
 
-##### Create and instance of the site class for website creation.	
+##### Create an instance of the site class for website creation.	
 
 
-website = web_output.Site("Results", False)
+website = web_output.Site("Results", web_output.SITE_BOXED, False)
+website.set_footer( "Made with python" )  
 
 
 ##### Get website input.
 
 
-form = cgi.FieldStorage()  # Get form data from the website.
+def check_input(txt):
+	if txt == None or txt == "":
+		website.send_error("Input field is empty,", " cannot run analysis")
+		website.generate_site()
+		sys.exit(1)
 
+form = cgi.FieldStorage()  # Get form data from the website.
 file_item = form['file']  # Get the file item
 
 # Check if the file was submitted to the form.
 if file_item.filename:
+	check_input(file_item.value.decode("utf-8"))
 	# Read the file's text.
-	input_field_text = [e+'\n' for e in str( file_item.value.decode("utf-8") ).replace('\r', '\n').split('\n') if e]
+	input_field_text = [e+'\n' for e in str( file_item.value.decode("utf-8") ).replace('\r', '\n').replace('\n\n', '\n').split('\n') if e]
 
 else:
+	check_input(form.getvalue("fastaInputArea"))
 	# Get user input string and convert it into a list of lines.
-	input_field_text = [e+'\n' for e in str( form.getvalue("fastaInputArea") ).replace('\r', '\n').split('\n') if e]
+	input_field_text = [e+'\n' for e in str(form.getvalue("fastaInputArea")).replace('\r', '\n').split('\n') if e]
 
 email_address_string = str(form.getvalue("emailAddress"))  # Get the email address value.
 
@@ -55,10 +57,13 @@ flag_list.append( 0 if form.getvalue("stop") == None else 1 )
 flag_list.append( 0 if form.getvalue("internal") == None else 1 )
 flag_list.append( 0 if form.getvalue("mixture") == None else 1 )
 
-#website.send( input_field_text )
-
-# Convert file to a list of tuples.
-fasta_list = sequence_utils.convert_fasta( input_field_text )
+try:
+	# Convert file to a list of tuples.
+	fasta_list = sequence_utils.convert_fasta( input_field_text )
+except Exception as e:
+	website.send_error("Failed to read fasta file,", " is something formatted wrong? <br> Recieved the following exception: <br><br>{}".format(str(e)))
+	website.generate_site()
+	sys.exit(1)
 
 # Convert the dna sequences to uppercase.
 index = 0
@@ -69,6 +74,10 @@ for tuple in fasta_list:
 
 ##### Run tests on the given sequences and save the results in matrix. 
 
+
+# These strings hold error messages.
+invalid_characters = ""
+info_messages = ""
 
 results_matrix = []  # This list of dictionaries (matrix?) will hold the results for all the sequences.
 
@@ -99,24 +108,30 @@ for tuple in fasta_list:
 
 		msg_third = "The following invalid characters were found: {}".format( invalid_char_string )
 
-		website.send (msg_first + '<br>' + msg_second + '<br>' + msg_third + '<br><br>' )
+		invalid_characters += ( msg_first + '<br>' + msg_second + '<br>' + msg_third + '<br><br>' )
 
 	##### Run the div3 test.
 	if flag_list[0] == 1:
 		output_dict["div3"] = sequence_utils.seq_div3_test(dna_sequence)
 	
 	##### Run the start test.
-	if flag_list[1] == 1 and output_dict['isvalid'] == True:
+	if flag_list[1] == 1 and output_dict['isvalid'] == True and len(dna_sequence) >= 3:
 		output_dict["start"] = sequence_utils.seq_start_test(dna_sequence)
-	
+	elif flag_list[1] == 1 and len(dna_sequence) < 3 and output_dict['isvalid'] == True:
+		info_messages += 'The sequence <em>{}</em> is too short to run the test <r style="color:red;">Starts with M.</r><br><br>'.format(tuple[0]) 
+
 	##### Run the stop test.
-	if flag_list[2] == 1 and output_dict['isvalid'] == True:
+	if flag_list[2] == 1 and output_dict['isvalid'] == True and len(dna_sequence)%3==0:
 		output_dict["stop"] = sequence_utils.seq_stop_test(dna_sequence)
+	elif flag_list[2] == 1 and not (len(dna_sequence)%3)==0 and output_dict['isvalid'] == True:
+		output_dict["stop"] = (False,)
 	
 	##### Run the internal test.
-	if flag_list[3] == 1 and output_dict['isvalid'] == True:
+	if flag_list[3] == 1 and output_dict['isvalid'] == True and len(dna_sequence) > 6:
 		output_dict["internal"] = sequence_utils.seq_internal_test(dna_sequence)
-	
+	elif flag_list[3] == 1 and len(dna_sequence) <= 6 and output_dict['isvalid'] == True:
+		info_messages += 'The sequence <em>{}</em> is too short to run the test <r style="color:red;">Stops with *</r><br><br>'.format(tuple[0])
+
 	##### Run the mixture test.
 	mixture_results = sequence_utils.seq_mixture_test(dna_sequence)
 
@@ -134,7 +149,7 @@ for tuple in fasta_list:
 
 
 # Print the quick results title.
-website.send ( '<br><h4 style="margin: 0;">Quick Results:</h4><br>' )
+website.send ( '<br><h4 style="margin: 0;">Quick Results:</h4>' )
 website.new_box()
 website.send ( '<br>' )
 
@@ -159,10 +174,10 @@ if flag_list[1] == 1:
 	website.send ( _quick_results_string('start', "have an improper start codon", results_matrix) )
 
 if flag_list[2] == 1:
-	website.send ( _quick_results_string('stop', "have an improper end codon", results_matrix) )
+	website.send ( _quick_results_string('stop', "lack a stop codon", results_matrix) )
 
 if flag_list[3] == 1:
-	website.send ( _quick_results_string('internal', "have internal end codons", results_matrix) )
+	website.send ( _quick_results_string('internal', "have internal stop codons", results_matrix) )
 	
 if flag_list[4] == 1:
 	website.send ( _quick_results_string('mixture', "contain mixtures", results_matrix) )
@@ -190,9 +205,9 @@ for dict in results_matrix:
 	
 	# Each of these are lists of length 1.
 	div3     = [] if flag_list[0] == 0 else [ ("PASS" if dict['div3'][0] == True else "FAIL") ]
-	start    = ([] if dict['isvalid'] else ["N/A (invalid character)"]) if flag_list[1] == 0 or dict['isvalid'] == False else [ ("PASS" if dict['start'][0] == True else "FAIL") ] 
-	stop     = ([] if dict['isvalid'] else ["N/A (invalid character)"]) if flag_list[2] == 0 or dict['isvalid'] == False else [ ("PASS" if dict['stop'][0] == True else "FAIL") ]
-	internal = ([] if dict['isvalid'] else ["N/A (invalid character)"]) if flag_list[3] == 0 or dict['isvalid'] == False else [ ("PASS" if dict['internal'][0] == True else "FAIL at {}".format(format_utils.format_list( dict['internal'][1:] ))) ]
+	start    = ([] if flag_list[1] == 0 else ["N/A (invalid character)"]) if flag_list[1] == 0 or dict['isvalid'] == False else [ ("PASS" if dict['start'][0] == True else "FAIL") if ('start' in dict) else "N/A (sequence too short)" ] 
+	stop     = ([] if flag_list[2] == 0 else ["N/A (invalid character)"]) if flag_list[2] == 0 or dict['isvalid'] == False else [ ("PASS" if dict['stop'][0] == True else "FAIL") ]
+	internal = ([] if flag_list[3] == 0 else ["N/A (invalid character)"]) if flag_list[3] == 0 or dict['isvalid'] == False else [ ("PASS" if dict['internal'][0] == True else "FAIL at {}".format(format_utils.format_list( dict['internal'][1:] ))) if ('internal' in dict) else "N/A (sequence too short)" ]
 	mixture  = [] if flag_list[4] == 0 else [ ("PASS" if dict['mixture'][0] == True else "FAIL.  Mixtures: {}".format(format_utils.format_list( [key for key in dict['mixture'][1].keys() if dict['mixture'][1][key] > 0] ))) ]
 	
 	percent_mixture = [ str(dict['mixture_percent']) + " %" ]
@@ -210,18 +225,28 @@ file_text = openpyxl.writer.excel.save_virtual_workbook(wb)
 xlsx_file = mailer.create_file( XLSX_FILENAME, 'xlsx', file_text )
 
 
+##### Print error messages that go under quick results
+
+
+if not (invalid_characters == "" and info_messages == ""):
+	website.new_box()
+	if invalid_characters != "": 
+		website.send("<h4>Invalid Characters:</h4>" + invalid_characters)
+	if info_messages != "":
+		website.send("<h4>Info Messages:</h4>" + info_messages)
+
+
 ##### Send an email with the xlsx file in it.
 
 
 website.new_box()
-website.send ( '<br>' )
 
 # Determine if an email should be sent.
 if flag_list[0] + flag_list[1] + flag_list[2] + flag_list[3] + flag_list[4] == 0:
 	website.send ( "All procedures are disabled.  Enable at least one procedure for an email to be sent." )
 
 elif email_address_string == '':
-	website.send ( "Email address not given; no email has been sent.<br>" )
+	website.send ( "Email address not given; no email has been sent." )
 
 else:
 	# Add the body to the message and send it.
@@ -229,13 +254,10 @@ else:
 	msg_body = "The included .xlsx file ({}.xlsx) contains the requested quality check data. \n\n{}".format(XLSX_FILENAME, end_message)
 
 	if mailer.send_sfu_email("quality_check", email_address_string, "Quality Check Results", msg_body, [xlsx_file]) == 0:
-		website.send ( "An email has been sent to <b>{}</b> with a full table of results. <br>Make sure <b>{}</b> is spelled correctly.<br>".format(email_address_string, email_address_string) )
+		website.send ( "An email has been sent to <b>{}</b> with a full table of results. <br>Make sure <b>{}</b> is spelled correctly.".format(email_address_string, email_address_string) )
 
 	# Check if email is formatted correctly.
 	if not re.match(r"[^@]+@[^@]+\.[^@]+", email_address_string):
-		website.send( "Your email address (<b>{}</b>) is likely spelled incorrectly, please re-check its spelling.<br>".format(email_address_string) )
-
-website.send ( '<br>' )
+		website.send( "<br>Your email address (<b>{}</b>) is likely spelled incorrectly, please re-check its spelling.".format(email_address_string) )
 	
-website.set_footer( "python version: " + sys.version)  # Print version number.
 website.generate_site()  # Actually finish running the site.
